@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Calendar, Clock, Video, Star, MapPin, DollarSign,
-  User, Phone, Mail, Award, CheckCircle, Filter,
-  Search, Heart, Brain, Users, Target, Plus,
-  Eye, MessageSquare, CreditCard, ArrowLeft
+  Calendar, Clock, Video, Star, MapPin, Award, 
+  ChevronLeft, ChevronRight, User, CreditCard,
+  CheckCircle, ArrowLeft, Heart, Shield, Phone,
+  Mail, DollarSign, Lock, AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { trackPayment, trackSessionStart } from '../utils/analyticsManager';
 
@@ -33,418 +32,262 @@ interface Therapist {
 interface TimeSlot {
   time: string;
   available: boolean;
-  day: string;
 }
 
-interface Appointment {
-  id: string;
-  patientId: string;
-  patientName: string;
-  therapistId: string;
-  therapistName: string;
-  date: string;
-  time: string;
-  duration: number;
-  amount: string;
-  status: 'pending_confirmation' | 'confirmed' | 'completed' | 'cancelled';
-  sessionType: 'video' | 'phone' | 'in-person';
-  notes?: string;
-  createdAt: string;
+interface PaymentInfo {
+  cardNumber: string;
+  expiryDate: string;
+  cvv: string;
+  cardholderName: string;
+  billingAddress: string;
 }
 
 function BookingPage() {
   const { user } = useAuth();
   const { theme } = useTheme();
-  const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState<'book' | 'appointments'>('appointments');
   const [selectedTherapist, setSelectedTherapist] = useState<Therapist | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSpecialization, setSelectedSpecialization] = useState<string>('');
-  const [availableTherapists, setAvailableTherapists] = useState<Therapist[]>([]);
-  const [showBookingModal, setShowBookingModal] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [userAppointments, setUserAppointments] = useState<Appointment[]>([]);
-  const [bookingStep, setBookingStep] = useState(1);
-  const [availableTimeSlots, setAvailableTimeSlots] = useState<TimeSlot[]>([]);
+  const [currentStep, setCurrentStep] = useState<'therapist' | 'datetime' | 'payment' | 'confirmation'>('therapist');
+  const [therapists, setTherapists] = useState<Therapist[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo>({
+    cardNumber: '',
+    expiryDate: '',
+    cvv: '',
+    cardholderName: '',
+    billingAddress: ''
+  });
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
 
   const defaultTherapists: Therapist[] = [
     {
-      id: '1',
-      name: 'Dr. Sarah Johnson',
-      title: 'Ph.D. in Clinical Psychology',
-      specialization: ['Anxiety', 'Depression'],
+      id: '2',
+      name: 'Dr. Sarah Smith',
+      title: 'Licensed Clinical Psychologist',
+      specialization: ['Cognitive Behavioral Therapy', 'Anxiety Disorders', 'Depression'],
       experience: 8,
-      rating: 4.9,
+      rating: 4.8,
       reviewCount: 127,
-      hourlyRate: 150,
-      location: 'New York, NY',
+      hourlyRate: 120,
+      location: 'Online',
       avatar: 'https://images.pexels.com/photos/5327580/pexels-photo-5327580.jpeg?auto=compress&cs=tinysrgb&w=150',
       verified: true,
       nextAvailable: 'Today, 2:00 PM',
-      bio: 'Specializing in cognitive behavioral therapy with over 8 years of experience helping patients overcome anxiety and depression.',
-      languages: ['English', 'Spanish']
-    },
-    {
-      id: '2',
-      name: 'Dr. Michael Chen',
-      title: 'M.D. Psychiatrist',
-      specialization: ['Trauma', 'PTSD'],
-      experience: 12,
-      rating: 4.8,
-      reviewCount: 89,
-      hourlyRate: 180,
-      location: 'Los Angeles, CA',
-      avatar: 'https://images.pexels.com/photos/5327921/pexels-photo-5327921.jpeg?auto=compress&cs=tinysrgb&w=150',
-      verified: true,
-      nextAvailable: 'Tomorrow, 10:00 AM',
-      bio: 'Expert in trauma therapy and EMDR with extensive experience in helping veterans and first responders.',
-      languages: ['English', 'Mandarin']
-    },
-    {
-      id: '3',
-      name: 'Dr. Emily Rodriguez',
-      title: 'Licensed Family Therapist',
-      specialization: ['Family Therapy', 'Couples'],
-      experience: 10,
-      rating: 4.7,
-      reviewCount: 156,
-      hourlyRate: 160,
-      location: 'Chicago, IL',
-      avatar: 'https://images.pexels.com/photos/5327647/pexels-photo-5327647.jpeg?auto=compress&cs=tinysrgb&w=150',
-      verified: true,
-      nextAvailable: 'Today, 4:30 PM',
-      bio: 'Dedicated to helping families and couples build stronger relationships through evidence-based therapeutic approaches.',
-      languages: ['English', 'Spanish', 'Portuguese']
+      bio: 'Experienced therapist specializing in CBT with a passion for helping patients overcome anxiety and depression.',
+      languages: ['English', 'Spanish'],
+      availability: [
+        'Monday 9:00 AM', 'Monday 10:00 AM', 'Monday 11:00 AM', 'Monday 12:00 PM', 
+        'Monday 1:00 PM', 'Monday 2:00 PM', 'Monday 3:00 PM', 'Monday 4:00 PM', 'Monday 5:00 PM',
+        'Tuesday 9:00 AM', 'Tuesday 10:00 AM', 'Tuesday 11:00 AM', 'Tuesday 12:00 PM',
+        'Tuesday 1:00 PM', 'Tuesday 2:00 PM', 'Tuesday 3:00 PM', 'Tuesday 4:00 PM', 'Tuesday 5:00 PM',
+        'Wednesday 9:00 AM', 'Wednesday 10:00 AM', 'Wednesday 11:00 AM', 'Wednesday 12:00 PM',
+        'Wednesday 1:00 PM', 'Wednesday 2:00 PM', 'Wednesday 3:00 PM', 'Wednesday 4:00 PM', 'Wednesday 5:00 PM',
+        'Thursday 9:00 AM', 'Thursday 10:00 AM', 'Thursday 11:00 AM', 'Thursday 12:00 PM',
+        'Thursday 1:00 PM', 'Thursday 2:00 PM', 'Thursday 3:00 PM', 'Thursday 4:00 PM', 'Thursday 5:00 PM',
+        'Friday 9:00 AM', 'Friday 10:00 AM', 'Friday 11:00 AM', 'Friday 12:00 PM',
+        'Friday 1:00 PM', 'Friday 2:00 PM', 'Friday 3:00 PM', 'Friday 4:00 PM', 'Friday 5:00 PM'
+      ]
     }
   ];
 
   useEffect(() => {
-    // Load approved therapist services
-    const therapistServices = JSON.parse(localStorage.getItem('mindcare_therapist_services') || '[]');
-    const approvedServices = therapistServices.filter((service: any) => service.status === 'approved');
-    
-    // Also check if the therapist user still exists and is active
-    const registeredUsers = JSON.parse(localStorage.getItem('mindcare_registered_users') || '[]');
-    const activeApprovedServices = approvedServices.filter((service: any) => {
-      const therapistUser = registeredUsers.find((u: any) => u.id === service.therapistId);
-      return therapistUser && therapistUser.status !== 'deleted' && therapistUser.status !== 'suspended';
-    });
-    
-    // Convert services to therapist format for booking
-    const availableTherapistsFromServices = activeApprovedServices.map((service: any) => {
-      const therapistUser = registeredUsers.find((u: any) => u.id === service.therapistId);
-      return {
-        id: service.therapistId,
-        name: service.therapistName,
-        title: service.qualification,
-        specialization: service.specialization,
-        experience: parseInt(service.experience.split(' ')[0]) || 0,
-        rating: 4.8, // Default rating for new therapists
-        reviewCount: 0,
-        hourlyRate: service.chargesPerSession,
-        location: 'Online',
-        avatar: service.profilePicture && service.profilePicture.trim() !== '' 
-          ? service.profilePicture 
-          : 'https://images.pexels.com/photos/5327580/pexels-photo-5327580.jpeg?auto=compress&cs=tinysrgb&w=150',
-        verified: true,
-        nextAvailable: 'Today, 2:00 PM',
-        bio: service.bio,
-        languages: service.languages,
-        availability: service.availability || []
-      };
-    });
-
-    // Load existing therapists from localStorage and merge with services
-    const existingTherapists = JSON.parse(localStorage.getItem('mindcare_therapists') || '[]');
-    
-    // Filter out deleted/suspended therapists from existing list
-    const activeExistingTherapists = existingTherapists.filter((therapist: any) => {
-      const therapistUser = registeredUsers.find((u: any) => u.id === therapist.id);
-      return !therapistUser || (therapistUser.status !== 'deleted' && therapistUser.status !== 'suspended');
-    });
-    
-    // Combine and deduplicate
-    const allTherapists = [...activeExistingTherapists];
-    availableTherapistsFromServices.forEach((serviceTherapist: any) => {
-      const existingIndex = allTherapists.findIndex((t: any) => t.id === serviceTherapist.id);
-      if (existingIndex >= 0) {
-        // Update existing therapist with service data
-        allTherapists[existingIndex] = serviceTherapist;
-      } else {
-        // Add new therapist
-        allTherapists.push(serviceTherapist);
-      }
-    });
-
-    if (allTherapists.length > 0) {
-      setAvailableTherapists(allTherapists);
-      localStorage.setItem('mindcare_therapists', JSON.stringify(allTherapists));
+    // Load available therapists
+    const savedTherapists = localStorage.getItem('mindcare_therapists');
+    if (savedTherapists) {
+      const parsed = JSON.parse(savedTherapists);
+      setTherapists(parsed);
     } else {
-      // Initialize with default therapists if none exist
+      setTherapists(defaultTherapists);
       localStorage.setItem('mindcare_therapists', JSON.stringify(defaultTherapists));
-      setAvailableTherapists(defaultTherapists);
     }
+  }, []);
 
-    // Load user appointments
-    loadUserAppointments();
-  }, [user]);
-
-  const loadUserAppointments = () => {
-    const allBookings = JSON.parse(localStorage.getItem('mindcare_bookings') || '[]');
-    const userBookings = allBookings.filter((booking: Appointment) => 
-      booking.patientId === user?.id
-    );
-    setUserAppointments(userBookings);
-  };
-
-  // Generate time slots based on therapist availability
-  const generateTimeSlots = (therapist: Therapist, selectedDate: string) => {
-    if (!selectedDate) return [];
-    
-    const selectedDateObj = new Date(selectedDate);
-    const dayName = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' });
-    
-    // Get therapist availability from multiple sources
-    let therapistAvailability = therapist.availability || [];
-    
-    // If no availability in therapist object, check therapist services
-    if (therapistAvailability.length === 0) {
-      const therapistServices = JSON.parse(localStorage.getItem('mindcare_therapist_services') || '[]');
-      const therapistService = therapistServices.find((s: any) => 
-        s.therapistId === therapist.id || s.therapistName === therapist.name
-      );
-      if (therapistService && therapistService.availability) {
-        therapistAvailability = therapistService.availability;
-      }
-    }
-    
-    // If still no availability, provide default slots
-    if (therapistAvailability.length === 0) {
-      const timeSlots = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'];
-      therapistAvailability = timeSlots.map(time => `${dayName} ${time}`);
-    }
-    
-    // Get all slots for the selected day
-    const daySlots = therapistAvailability.filter(slot => slot.startsWith(dayName));
-    
-    // If no slots for the specific day, check if it's a weekday and provide default slots
-    if (daySlots.length === 0) {
-      const dayOfWeek = selectedDateObj.getDay(); // 0 = Sunday, 1 = Monday, etc.
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Monday to Friday
-        const timeSlots = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'];
-        const defaultSlots = timeSlots.map(time => `${dayName} ${time}`);
-        return defaultSlots.map(slot => {
-          const timeMatch = slot.match(/(\d{1,2}:\d{2} [AP]M)/);
-          const time = timeMatch ? timeMatch[1] : '';
-          
-          const convertTo24Hour = (time12: string) => {
-            const [time, modifier] = time12.split(' ');
-            let [hours, minutes] = time.split(':');
-            if (hours === '12') {
-              hours = '00';
-            }
-            if (modifier === 'PM') {
-              hours = (parseInt(hours, 10) + 12).toString();
-            }
-            return `${hours.padStart(2, '0')}:${minutes}`;
-          };
-          
-          return {
-            time: convertTo24Hour(time),
-            available: !isSlotBooked(therapist.id, selectedDate, convertTo24Hour(time)),
-            day: dayName
-          };
-        });
-      }
-    }
-    
-    // Extract time from slots like "Monday 9:00 AM"
-    const timeSlots = daySlots.map(slot => {
-      const timeMatch = slot.match(/(\d{1,2}:\d{2} [AP]M)/);
-      const time = timeMatch ? timeMatch[1] : '';
-      
-      // Convert to 24-hour format for easier handling
-      const convertTo24Hour = (time12: string) => {
-        const [time, modifier] = time12.split(' ');
-        let [hours, minutes] = time.split(':');
-        if (hours === '12') {
-          hours = '00';
-        }
-        if (modifier === 'PM') {
-          hours = (parseInt(hours, 10) + 12).toString();
-        }
-        return `${hours.padStart(2, '0')}:${minutes}`;
-      };
-      
-      return {
-        time: convertTo24Hour(time),
-        available: !isSlotBooked(therapist.id, selectedDate, convertTo24Hour(time)),
-        day: dayName
-      };
-    });
-    
-    return timeSlots.sort((a, b) => a.time.localeCompare(b.time));
-  };
-  
-  // Check if a specific time slot is already booked
-  const isSlotBooked = (therapistId: string, date: string, time: string) => {
-    const allBookings = JSON.parse(localStorage.getItem('mindcare_bookings') || '[]');
-    return allBookings.some((booking: any) => 
-      (booking.therapistId === therapistId || booking.therapistName === therapistId) &&
-      booking.date === date &&
-      booking.time === time &&
-      booking.status !== 'cancelled'
-    );
-  };
-
-  // Update available time slots when therapist or date changes
   useEffect(() => {
     if (selectedTherapist && selectedDate) {
-      const slots = generateTimeSlots(selectedTherapist, selectedDate);
-      setAvailableTimeSlots(slots);
+      generateAvailableSlots();
     }
   }, [selectedTherapist, selectedDate]);
 
-  const specializations = ['All', 'Anxiety', 'Depression', 'PTSD', 'Trauma', 'Family Therapy', 'Addiction', 'CBT'];
+  const generateAvailableSlots = () => {
+    if (!selectedTherapist) return;
 
-  const filteredTherapists = availableTherapists.filter(therapist => {
-    const matchesSearch = therapist.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         therapist.specialization.some(spec => spec.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesSpecialization = selectedSpecialization === '' || selectedSpecialization === 'All' ||
-                                 therapist.specialization.includes(selectedSpecialization);
-    return matchesSearch && matchesSpecialization;
-  });
-
-  const handleBookSession = () => {
-    if (!selectedTherapist || !selectedDate || !selectedTime) {
-      toast.error('Please select a therapist, date, and time');
-      return;
-    }
+    const dayName = new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long' });
+    const therapistAvailability = selectedTherapist.availability || [];
     
-    // Convert 24-hour time back to 12-hour format for display
-    const convertTo12Hour = (time24: string) => {
-      const [hours, minutes] = time24.split(':');
-      const hour = parseInt(hours, 10);
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-      return `${displayHour}:${minutes} ${ampm}`;
-    };
-    
-    const displayTime = convertTo12Hour(selectedTime);
+    // Get slots for the selected day
+    const daySlots = therapistAvailability
+      .filter(slot => slot.startsWith(dayName))
+      .map(slot => slot.split(' ')[1] + ' ' + slot.split(' ')[2]);
 
-    // Create booking object and save to localStorage
-    const booking: Appointment = {
-      id: Date.now().toString(),
-      patientId: user?.id || '',
-      patientName: user?.name || '',
-      therapistId: selectedTherapist.id,
-      therapistName: selectedTherapist.name,
-      date: selectedDate,
-      time: selectedTime, // Keep 24-hour format for internal use
-      duration: 60,
-      amount: `$${selectedTherapist.hourlyRate}`,
-      status: 'pending_confirmation',
-      sessionType: 'video',
-      patientEmail: user?.email || '',
-      createdAt: new Date().toISOString(),
-      displayTime: displayTime // Add display time for UI
-    };
-
-    // Save to localStorage
+    // Check existing bookings to mark slots as unavailable
     const existingBookings = JSON.parse(localStorage.getItem('mindcare_bookings') || '[]');
-    existingBookings.push(booking);
-    localStorage.setItem('mindcare_bookings', JSON.stringify(existingBookings));
+    const dayBookings = existingBookings.filter((booking: any) => 
+      booking.date === selectedDate && 
+      (booking.therapistId === selectedTherapist.id || booking.therapistName === selectedTherapist.name) &&
+      booking.status !== 'cancelled'
+    );
 
-    // Track session booking
-    trackSessionStart(booking);
+    const slots: TimeSlot[] = daySlots.map(time => ({
+      time,
+      available: !dayBookings.some((booking: any) => booking.time === time)
+    }));
 
-    toast.success(`Session booked with ${selectedTherapist.name} for ${selectedDate} at ${displayTime}!`);
-    setShowBookingModal(false);
-    setShowPaymentModal(true);
+    setAvailableSlots(slots);
   };
 
-  const handlePayment = () => {
-    if (!selectedTherapist || !selectedDate || !selectedTime) {
-      toast.error('Missing booking information');
-      return;
+  const selectTherapist = (therapist: Therapist) => {
+    setSelectedTherapist(therapist);
+    setCurrentStep('datetime');
+  };
+
+  const selectDateTime = (date: string, time: string) => {
+    setSelectedDate(date);
+    setSelectedTime(time);
+    setCurrentStep('payment');
+  };
+
+  const handlePaymentInputChange = (field: keyof PaymentInfo, value: string) => {
+    setPaymentInfo(prev => ({ ...prev, [field]: value }));
+  };
+
+  const validatePaymentInfo = (): boolean => {
+    if (!paymentInfo.cardNumber || paymentInfo.cardNumber.length < 16) {
+      toast.error('Please enter a valid card number');
+      return false;
     }
+    if (!paymentInfo.expiryDate || !/^\d{2}\/\d{2}$/.test(paymentInfo.expiryDate)) {
+      toast.error('Please enter expiry date in MM/YY format');
+      return false;
+    }
+    if (!paymentInfo.cvv || paymentInfo.cvv.length < 3) {
+      toast.error('Please enter a valid CVV');
+      return false;
+    }
+    if (!paymentInfo.cardholderName.trim()) {
+      toast.error('Please enter cardholder name');
+      return false;
+    }
+    return true;
+  };
 
-    // Update booking status to confirmed after payment
-    const existingBookings = JSON.parse(localStorage.getItem('mindcare_bookings') || '[]');
-    const updatedBookings = existingBookings.map((booking: Appointment) => {
-      if (booking.therapistId === selectedTherapist.id && 
-          booking.date === selectedDate && 
-          booking.time === selectedTime &&
-          booking.patientId === user?.id) {
-        return { ...booking, status: 'confirmed' };
-      }
-      return booking;
-    });
-    localStorage.setItem('mindcare_bookings', JSON.stringify(updatedBookings));
+  const processPayment = async () => {
+    if (!validatePaymentInfo()) return;
+    if (!selectedTherapist || !selectedDate || !selectedTime) return;
 
-    // Track payment
-    trackPayment({
-      amount: `$${selectedTherapist.hourlyRate}`,
-      patientId: user?.id,
-      therapistId: selectedTherapist.id,
-      sessionType: 'video'
-    });
+    setIsProcessingPayment(true);
 
-    toast.success('Payment successful! Your session is confirmed.');
-    setShowPaymentModal(false);
+    try {
+      // Simulate payment processing delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Create booking only after successful payment
+      const newBooking = {
+        id: Date.now().toString(),
+        patientId: user?.id,
+        patientName: user?.name,
+        patientEmail: user?.email,
+        therapistId: selectedTherapist.id,
+        therapistName: selectedTherapist.name,
+        date: selectedDate,
+        time: selectedTime,
+        duration: 50,
+        sessionType: 'video',
+        amount: `$${selectedTherapist.hourlyRate}`,
+        status: 'pending_confirmation',
+        createdAt: new Date().toISOString(),
+        paymentStatus: 'completed',
+        paymentMethod: `****${paymentInfo.cardNumber.slice(-4)}`,
+        notes: `Video therapy session with ${selectedTherapist.name}`
+      };
+
+      // Save booking to localStorage
+      const existingBookings = JSON.parse(localStorage.getItem('mindcare_bookings') || '[]');
+      const updatedBookings = [...existingBookings, newBooking];
+      localStorage.setItem('mindcare_bookings', JSON.stringify(updatedBookings));
+
+      // Track payment and session start in analytics
+      trackPayment({
+        patientId: user?.id,
+        therapistId: selectedTherapist.id,
+        amount: `$${selectedTherapist.hourlyRate}`,
+        sessionType: 'video'
+      });
+
+      trackSessionStart({
+        patientId: user?.id,
+        therapistId: selectedTherapist.id,
+        sessionType: 'video',
+        duration: 50
+      });
+
+      // Dispatch custom event for real-time updates
+      window.dispatchEvent(new CustomEvent('mindcare-data-updated'));
+
+      setBookingConfirmed(true);
+      setCurrentStep('confirmation');
+      toast.success('Payment successful! Your session has been booked.');
+
+    } catch (error) {
+      toast.error('Payment failed. Please try again.');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const resetBooking = () => {
     setSelectedTherapist(null);
     setSelectedDate('');
     setSelectedTime('');
-    setBookingStep(1);
-    
-    // Refresh appointments
-    loadUserAppointments();
-    setViewMode('appointments');
+    setCurrentStep('therapist');
+    setPaymentInfo({
+      cardNumber: '',
+      expiryDate: '',
+      cvv: '',
+      cardholderName: '',
+      billingAddress: ''
+    });
+    setBookingConfirmed(false);
   };
 
-  const joinSession = (appointment: Appointment) => {
-    if (appointment.status !== 'confirmed') {
-      toast.error('Session must be confirmed to join');
-      return;
+  const getNextAvailableDate = () => {
+    const today = new Date();
+    for (let i = 0; i < 14; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const dateString = date.toISOString().split('T')[0];
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      
+      if (selectedTherapist?.availability?.some(slot => slot.startsWith(dayName))) {
+        return dateString;
+      }
     }
-
-    // Navigate to video session page
-    navigate(`/video-session/${appointment.id}`);
+    return today.toISOString().split('T')[0];
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'confirmed': return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
-      case 'pending_confirmation': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300';
-      case 'completed': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300';
-      case 'cancelled': return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300';
+  const formatCardNumber = (value: string) => {
+    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+    const matches = v.match(/\d{4,16}/g);
+    const match = matches && matches[0] || '';
+    const parts = [];
+    for (let i = 0, len = match.length; i < len; i += 4) {
+      parts.push(match.substring(i, i + 4));
     }
-  };
-
-  const getSpecializationIcon = (spec: string) => {
-    switch (spec.toLowerCase()) {
-      case 'anxiety':
-      case 'depression':
-        return Brain;
-      case 'ptsd':
-      case 'trauma':
-        return Heart;
-      case 'family therapy':
-      case 'couples':
-        return Users;
-      case 'addiction':
-        return Target;
-      default:
-        return Brain;
+    if (parts.length) {
+      return parts.join(' ');
+    } else {
+      return v;
     }
   };
 
-  const upcomingAppointments = userAppointments.filter(apt => 
-    apt.status === 'confirmed' && new Date(`${apt.date} ${apt.time}`) > new Date()
-  );
+  const formatExpiryDate = (value: string) => {
+    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+    if (v.length >= 2) {
+      return v.substring(0, 2) + '/' + v.substring(2, 4);
+    }
+    return v;
+  };
 
   return (
     <div className={`h-screen flex flex-col ${
@@ -455,711 +298,662 @@ function BookingPage() {
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
+          className="mb-4"
         >
-          <div className={`p-6 rounded-2xl shadow-lg ${
-            theme === 'dark' ? 'bg-gray-800' : 'bg-white'
-          }`}>
-            <h1 className={`text-2xl font-bold mb-2 ${
-              theme === 'dark' ? 'text-white' : 'text-gray-800'
-            }`}>
-              Video Therapy Sessions
-            </h1>
-            <p className={`text-base ${
-              theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
-            }`}>
-              Connect with licensed therapists through secure, encrypted video calls
-            </p>
-
-            {/* Upcoming Session Alert */}
-            {upcomingAppointments.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-4 p-4 bg-gradient-to-r from-green-500 to-teal-500 rounded-xl text-white"
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className={`text-2xl font-bold mb-2 ${
+                theme === 'dark' ? 'text-white' : 'text-gray-800'
+              }`}>
+                Book a Therapy Session
+              </h1>
+              <p className={`text-base ${
+                theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
+              }`}>
+                Connect with licensed therapists for personalized support
+              </p>
+            </div>
+            {currentStep !== 'therapist' && (
+              <button
+                onClick={() => {
+                  if (currentStep === 'datetime') setCurrentStep('therapist');
+                  else if (currentStep === 'payment') setCurrentStep('datetime');
+                  else if (currentStep === 'confirmation') resetBooking();
+                }}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                } shadow-lg`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Video className="w-6 h-6" />
-                    <div>
-                      <h3 className="font-semibold">Upcoming Session</h3>
-                      <p className="text-sm opacity-90">
-                        {upcomingAppointments[0].therapistName} • Today at {upcomingAppointments[0].time}
-                      </p>
-                    </div>
-                  </div>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => joinSession(upcomingAppointments[0])}
-                    className="px-4 py-2 bg-white text-green-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
-                  >
-                    Join Call
-                  </motion.button>
-                </div>
-              </motion.div>
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
             )}
           </div>
         </motion.div>
 
-        {/* View Toggle */}
+        {/* Progress Steps */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="mb-6"
-        >
-          <div className={`flex space-x-1 p-1 rounded-xl ${
+          className={`mb-6 p-4 rounded-xl shadow-lg ${
             theme === 'dark' ? 'bg-gray-800' : 'bg-white'
-          } shadow-lg`}>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setViewMode('book')}
-              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                viewMode === 'book'
-                  ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
-                  : theme === 'dark'
-                  ? 'text-gray-400 hover:text-white hover:bg-gray-700'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              <Calendar className="w-4 h-4" />
-              <span>Book Session</span>
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setViewMode('appointments')}
-              className={`flex items-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                viewMode === 'appointments'
-                  ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
-                  : theme === 'dark'
-                  ? 'text-gray-400 hover:text-white hover:bg-gray-700'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span>My Appointments</span>
-            </motion.button>
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            {[
+              { id: 'therapist', label: 'Select Therapist', icon: User },
+              { id: 'datetime', label: 'Choose Date & Time', icon: Calendar },
+              { id: 'payment', label: 'Payment', icon: CreditCard },
+              { id: 'confirmation', label: 'Confirmation', icon: CheckCircle }
+            ].map((step, index) => (
+              <div key={step.id} className="flex items-center">
+                <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg ${
+                  currentStep === step.id
+                    ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
+                    : index < ['therapist', 'datetime', 'payment', 'confirmation'].indexOf(currentStep)
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300'
+                    : theme === 'dark'
+                    ? 'bg-gray-700 text-gray-400'
+                    : 'bg-gray-100 text-gray-600'
+                }`}>
+                  <step.icon className="w-4 h-4" />
+                  <span className="text-sm font-medium hidden md:inline">{step.label}</span>
+                </div>
+                {index < 3 && (
+                  <div className={`w-8 h-0.5 mx-2 ${
+                    index < ['therapist', 'datetime', 'payment', 'confirmation'].indexOf(currentStep)
+                      ? 'bg-green-500'
+                      : 'bg-gray-300 dark:bg-gray-600'
+                  }`} />
+                )}
+              </div>
+            ))}
           </div>
         </motion.div>
 
+        {/* Step Content */}
         <AnimatePresence mode="wait">
-          {viewMode === 'appointments' ? (
+          {currentStep === 'therapist' && (
             <motion.div
-              key="appointments"
+              key="therapist"
               initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 30 }}
-              className="space-y-4"
+              className="grid md:grid-cols-2 lg:grid-cols-3 gap-4"
             >
+              {therapists.map((therapist, index) => (
+                <motion.div
+                  key={therapist.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  whileHover={{ y: -5, scale: 1.02 }}
+                  onClick={() => selectTherapist(therapist)}
+                  className={`p-4 rounded-xl shadow-lg cursor-pointer transition-all duration-300 ${
+                    theme === 'dark' ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:shadow-xl'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3 mb-3">
+                    <img
+                      src={therapist.avatar}
+                      alt={therapist.name}
+                      className="w-12 h-12 rounded-full object-cover"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <h3 className={`font-semibold ${
+                          theme === 'dark' ? 'text-white' : 'text-gray-800'
+                        }`}>
+                          {therapist.name}
+                        </h3>
+                        {therapist.verified && (
+                          <Shield className="w-4 h-4 text-green-500" />
+                        )}
+                      </div>
+                      <p className={`text-sm ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      }`}>
+                        {therapist.title}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-3">
+                    <div className="flex items-center space-x-2">
+                      <Award className="w-4 h-4 text-purple-500" />
+                      <span className={`text-sm ${
+                        theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                      }`}>
+                        {therapist.experience} years experience
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                      <span className={`text-sm ${
+                        theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                      }`}>
+                        {therapist.rating} ({therapist.reviewCount} reviews)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <DollarSign className="w-4 h-4 text-green-500" />
+                      <span className={`text-sm font-semibold text-green-600`}>
+                        ${therapist.hourlyRate}/session
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <p className={`text-sm font-medium mb-2 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Specializations:
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {therapist.specialization.slice(0, 2).map((spec, idx) => (
+                        <span
+                          key={idx}
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            theme === 'dark' ? 'bg-purple-900/50 text-purple-300' : 'bg-purple-100 text-purple-700'
+                          }`}
+                        >
+                          {spec}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className={`text-sm ${
+                    theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                  }`}>
+                    Next available: {therapist.nextAvailable}
+                  </p>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+
+          {currentStep === 'datetime' && selectedTherapist && (
+            <motion.div
+              key="datetime"
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 30 }}
+              className="grid lg:grid-cols-2 gap-6"
+            >
+              {/* Date Selection */}
               <div className={`p-4 rounded-xl shadow-lg ${
                 theme === 'dark' ? 'bg-gray-800' : 'bg-white'
               }`}>
                 <h3 className={`text-lg font-semibold mb-4 ${
                   theme === 'dark' ? 'text-white' : 'text-gray-800'
                 }`}>
-                  My Appointments
+                  Select Date
                 </h3>
+                <div className="grid grid-cols-7 gap-2">
+                  {Array.from({ length: 14 }, (_, i) => {
+                    const date = new Date();
+                    date.setDate(date.getDate() + i);
+                    const dateString = date.toISOString().split('T')[0];
+                    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                    const dayNumber = date.getDate();
+                    
+                    const hasAvailability = selectedTherapist.availability?.some(slot => 
+                      slot.startsWith(date.toLocaleDateString('en-US', { weekday: 'long' }))
+                    );
 
-                {userAppointments.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Calendar className={`w-16 h-16 mx-auto mb-4 ${
-                      theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
-                    }`} />
-                    <p className={`text-lg mb-4 ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                    }`}>
-                      No appointments scheduled
-                    </p>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setViewMode('book')}
-                      className="px-6 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300"
-                    >
-                      Book Your First Session
-                    </motion.button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {userAppointments.map((appointment) => (
-                      <motion.div
-                        key={appointment.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`p-4 rounded-xl border ${
-                          theme === 'dark' 
-                            ? 'border-gray-700 bg-gray-700/50' 
-                            : 'border-gray-200 bg-gray-50'
+                    return (
+                      <motion.button
+                        key={dateString}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => {
+                          if (hasAvailability) {
+                            setSelectedDate(dateString);
+                          }
+                        }}
+                        disabled={!hasAvailability}
+                        className={`p-2 rounded-lg text-center transition-all duration-200 ${
+                          selectedDate === dateString
+                            ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
+                            : hasAvailability
+                            ? theme === 'dark'
+                              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                              <User className="w-6 h-6 text-purple-600" />
-                            </div>
-                            <div>
-                              <h4 className={`font-semibold ${
-                                theme === 'dark' ? 'text-white' : 'text-gray-800'
-                              }`}>
-                                {appointment.therapistName}
-                              </h4>
-                              <p className={`text-sm ${
-                                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                              }`}>
-                                {appointment.date} at {
-                                  appointment.displayTime || 
-                                  (appointment.time ? new Date(`2000-01-01T${appointment.time}`).toLocaleTimeString('en-US', {
-                                    hour: 'numeric',
-                                    minute: '2-digit',
-                                    hour12: true
-                                  }) : appointment.time)
-                                }
-                              </p>
-                              <p className={`text-sm ${
-                                theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                              }`}>
-                                Duration: {appointment.duration} minutes
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(appointment.status)}`}>
-                              {appointment.status === 'pending_confirmation' ? 'Pending' : 
-                               appointment.status === 'confirmed' ? 'Upcoming' :
-                               appointment.status === 'completed' ? 'Completed' : 'Cancelled'}
-                            </span>
-                            {appointment.status === 'confirmed' && (
-                              <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => joinSession(appointment)}
-                                className="px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300"
-                              >
-                                Join
-                              </motion.button>
-                            )}
-                          </div>
-                        </div>
-                      </motion.div>
+                        <div className="text-xs">{dayName}</div>
+                        <div className="text-sm font-semibold">{dayNumber}</div>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Time Selection */}
+              <div className={`p-4 rounded-xl shadow-lg ${
+                theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+              }`}>
+                <h3 className={`text-lg font-semibold mb-4 ${
+                  theme === 'dark' ? 'text-white' : 'text-gray-800'
+                }`}>
+                  Available Times
+                  {selectedDate && (
+                    <span className={`text-sm font-normal ml-2 ${
+                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                    }`}>
+                      for {new Date(selectedDate).toLocaleDateString()}
+                    </span>
+                  )}
+                </h3>
+                
+                {selectedDate ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {availableSlots.map((slot) => (
+                      <motion.button
+                        key={slot.time}
+                        whileHover={{ scale: slot.available ? 1.02 : 1 }}
+                        whileTap={{ scale: slot.available ? 0.98 : 1 }}
+                        onClick={() => {
+                          if (slot.available) {
+                            selectDateTime(selectedDate, slot.time);
+                          }
+                        }}
+                        disabled={!slot.available}
+                        className={`p-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          selectedTime === slot.time
+                            ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
+                            : slot.available
+                            ? theme === 'dark'
+                              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {slot.time}
+                        {!slot.available && (
+                          <div className="text-xs mt-1">Booked</div>
+                        )}
+                      </motion.button>
                     ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Calendar className={`w-12 h-12 mx-auto mb-4 ${
+                      theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
+                    }`} />
+                    <p className={`${
+                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                    }`}>
+                      Please select a date first
+                    </p>
                   </div>
                 )}
               </div>
             </motion.div>
-          ) : (
+          )}
+
+          {currentStep === 'payment' && selectedTherapist && selectedDate && selectedTime && (
             <motion.div
-              key="book"
-              initial={{ opacity: 0, x: 30 }}
+              key="payment"
+              initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
-              className="space-y-6"
+              exit={{ opacity: 0, x: 30 }}
+              className="grid lg:grid-cols-2 gap-6"
             >
-              {/* Search and Filters */}
+              {/* Booking Summary */}
               <div className={`p-4 rounded-xl shadow-lg ${
                 theme === 'dark' ? 'bg-gray-800' : 'bg-white'
               }`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className={`text-lg font-semibold ${
-                    theme === 'dark' ? 'text-white' : 'text-gray-800'
-                  }`}>
-                    Available Therapists
-                  </h3>
-                  <button className="flex items-center space-x-2 px-3 py-1 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-all duration-300 text-sm">
-                    <Filter className="w-4 h-4" />
-                    <span>Filter & Sort</span>
-                  </button>
-                </div>
-                <div className="flex flex-col md:flex-row gap-3">
-                  <div className="flex-1 relative">
-                    <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                    }`} />
-                    <input
-                      type="text"
-                      placeholder="Search therapists by name or specialization..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className={`w-full pl-9 pr-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${
-                        theme === 'dark'
-                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                      }`}
+                <h3 className={`text-lg font-semibold mb-4 ${
+                  theme === 'dark' ? 'text-white' : 'text-gray-800'
+                }`}>
+                  Booking Summary
+                </h3>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3">
+                    <img
+                      src={selectedTherapist.avatar}
+                      alt={selectedTherapist.name}
+                      className="w-12 h-12 rounded-full object-cover"
                     />
-                  </div>
-                  <select
-                    value={selectedSpecialization}
-                    onChange={(e) => setSelectedSpecialization(e.target.value)}
-                    className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${
-                      theme === 'dark'
-                        ? 'bg-gray-700 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                  >
-                    {specializations.map((spec) => (
-                      <option key={spec} value={spec === 'All' ? '' : spec}>
-                        {spec}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Therapists List */}
-              <div className="space-y-4">
-                {filteredTherapists.map((therapist, index) => (
-                  <motion.div
-                    key={therapist.id}
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    className={`p-4 rounded-xl shadow-lg ${
-                      theme === 'dark' ? 'bg-gray-800' : 'bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="relative">
-                          <img
-                            src={therapist.avatar}
-                            alt={therapist.name}
-                            className="w-16 h-16 rounded-full object-cover"
-                          />
-                          {therapist.verified && (
-                            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                              <CheckCircle className="w-3 h-3 text-white" />
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <h3 className={`text-lg font-semibold ${
-                            theme === 'dark' ? 'text-white' : 'text-gray-800'
-                          }`}>
-                            {therapist.name}
-                          </h3>
-                          <p className={`text-sm ${
-                            theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                          }`}>
-                            {therapist.title}
-                          </p>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <div className="flex items-center space-x-1">
-                              <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                              <span className={`text-sm font-medium ${
-                                theme === 'dark' ? 'text-white' : 'text-gray-800'
-                              }`}>
-                                {therapist.rating}
-                              </span>
-                            </div>
-                            <span className={`text-sm ${
-                              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                            }`}>
-                              {therapist.experience} years exp
-                            </span>
-                            <span className={`text-sm font-semibold text-green-600`}>
-                              ${therapist.hourlyRate}/hour
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-2 mt-2">
-                            {therapist.specialization.map((spec, idx) => (
-                              <span
-                                key={idx}
-                                className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  theme === 'dark' ? 'bg-purple-900/50 text-purple-300' : 'bg-purple-100 text-purple-700'
-                                }`}
-                              >
-                                {spec}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm ${
-                          theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                        }`}>
-                          Available Hours:
-                        </p>
-                        <p className={`font-semibold ${
-                          theme === 'dark' ? 'text-white' : 'text-gray-800'
-                        }`}>
-                          9 AM - 5 PM Daily
-                        </p>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => {
-                            setSelectedTherapist(therapist);
-                            setShowBookingModal(true);
-                          }}
-                          className="mt-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300"
-                        >
-                          Book Session
-                        </motion.button>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Booking Modal */}
-        <AnimatePresence>
-          {showBookingModal && selectedTherapist && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-              onClick={() => setShowBookingModal(false)}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className={`max-w-2xl w-full rounded-2xl shadow-2xl ${
-                  theme === 'dark' ? 'bg-gray-800' : 'bg-white'
-                }`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6">
-                  {/* Header */}
-                  <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h2 className={`text-2xl font-bold ${
+                      <h4 className={`font-semibold ${
                         theme === 'dark' ? 'text-white' : 'text-gray-800'
                       }`}>
-                        Book Session
-                      </h2>
-                      <div className="flex items-center space-x-2 mt-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                          bookingStep >= 1 ? 'bg-purple-500' : 'bg-gray-400'
-                        }`}>
-                          1
-                        </div>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                          bookingStep >= 2 ? 'bg-purple-500' : 'bg-gray-400'
-                        }`}>
-                          2
-                        </div>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                          bookingStep >= 3 ? 'bg-purple-500' : 'bg-gray-400'
-                        }`}>
-                          3
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowBookingModal(false)}
-                      className={`p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                        {selectedTherapist.name}
+                      </h4>
+                      <p className={`text-sm ${
                         theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                      }`}
-                    >
-                      ×
-                    </button>
+                      }`}>
+                        {selectedTherapist.title}
+                      </p>
+                    </div>
                   </div>
 
-                  {bookingStep === 1 && (
-                    <div>
-                      <h3 className={`text-lg font-semibold mb-4 ${
-                        theme === 'dark' ? 'text-white' : 'text-gray-800'
-                      }`}>
-                        Select Date & Time
-                      </h3>
-
-                      {/* Therapist Info */}
-                      <div className="flex items-center space-x-4 mb-6">
-                        <img
-                          src={selectedTherapist.avatar}
-                          alt={selectedTherapist.name}
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                        <div>
-                          <h4 className={`font-semibold ${
-                            theme === 'dark' ? 'text-white' : 'text-gray-800'
-                          }`}>
-                            {selectedTherapist.name}
-                          </h4>
-                          <p className={`text-sm ${
-                            theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                          }`}>
-                            {selectedTherapist.title}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Date Selection */}
-                      <div className="mb-4">
-                        <label className={`block text-sm font-medium mb-2 ${
-                          theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                        }`}>
-                          Preferred Date
-                        </label>
-                        <input
-                          type="date"
-                          value={selectedDate}
-                          onChange={(e) => setSelectedDate(e.target.value)}
-                          min={new Date().toISOString().split('T')[0]}
-                          className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${
-                            theme === 'dark'
-                              ? 'bg-gray-700 border-gray-600 text-white'
-                              : 'bg-white border-gray-300 text-gray-900'
-                          }`}
-                        />
-                      </div>
-
-                      {/* Time Selection */}
-                      <div className="mb-6">
-                        <label className={`block text-sm font-medium mb-2 ${
-                          theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
-                        }`}>
-                          Available Time Slots
-                        </label>
-                        {availableTimeSlots.length > 0 ? (
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                            {availableTimeSlots.map((slot) => (
-                              <motion.button
-                                key={slot.time}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => setSelectedTime(slot.time)}
-                                disabled={!slot.available}
-                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                  selectedTime === slot.time
-                                    ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
-                                    : slot.available
-                                    ? theme === 'dark'
-                                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                    : 'bg-red-100 text-red-500 cursor-not-allowed opacity-50'
-                                }`}
-                              >
-                                {/* Convert 24-hour back to 12-hour for display */}
-                                {new Date(`2000-01-01T${slot.time}`).toLocaleTimeString('en-US', {
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                  hour12: true
-                                })}
-                                {!slot.available && (
-                                  <span className="block text-xs mt-1">Booked</span>
-                                )}
-                              </motion.button>
-                            ))}
-                          </div>
-                        ) : selectedDate ? (
-                          <div className={`p-4 rounded-lg text-center ${
-                            theme === 'dark' ? 'bg-gray-700' : 'bg-gray-50'
-                          }`}>
-                            <p className={`text-sm ${
-                              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                            }`}>
-                              No available slots for {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long' })}. 
-                              Please try a different date or contact the therapist directly.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className={`p-4 rounded-lg text-center ${
-                            theme === 'dark' ? 'bg-gray-700' : 'bg-gray-50'
-                          }`}>
-                            <p className={`text-sm ${
-                              theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                            }`}>
-                              Please select a date first
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setBookingStep(2)}
-                        disabled={!selectedDate || !selectedTime}
-                        className="w-full py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Continue
-                      </motion.button>
-                    </div>
-                  )}
-
-                  {bookingStep === 2 && (
-                    <div>
-                      <h3 className={`text-lg font-semibold mb-4 ${
-                        theme === 'dark' ? 'text-white' : 'text-gray-800'
-                      }`}>
-                        Session Details
-                      </h3>
-
-                      {/* Session Summary */}
-                      <div className={`p-4 rounded-xl mb-6 ${
-                        theme === 'dark' ? 'bg-gray-700' : 'bg-gray-50'
-                      }`}>
-                        <h4 className={`font-semibold mb-3 ${
-                          theme === 'dark' ? 'text-white' : 'text-gray-800'
-                        }`}>
-                          Booking Summary
-                        </h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-                              Therapist:
-                            </span>
-                            <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                              {selectedTherapist.name}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-                              Date & Time:
-                            </span>
-                            <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                              {selectedDate} at {selectedTime}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-                              Duration:
-                            </span>
-                            <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                              60 minutes
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-                              Session Fee:
-                            </span>
-                            <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                              ${selectedTherapist.hourlyRate}
-                            </span>
-                          </div>
-                          <div className="flex justify-between font-semibold pt-2 border-t border-gray-300 dark:border-gray-600">
-                            <span className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
-                              Total:
-                            </span>
-                            <span className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
-                              ${selectedTherapist.hourlyRate}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex space-x-3">
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => setBookingStep(1)}
-                          className={`flex-1 py-3 rounded-xl font-medium transition-all duration-200 ${
-                            theme === 'dark'
-                              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                          }`}
-                        >
-                          Back
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={handleBookSession}
-                          className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300"
-                        >
-                          Proceed to Payment
-                        </motion.button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Payment Modal */}
-        <AnimatePresence>
-          {showPaymentModal && selectedTherapist && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-              onClick={() => setShowPaymentModal(false)}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className={`max-w-md w-full rounded-2xl shadow-2xl ${
-                  theme === 'dark' ? 'bg-gray-800' : 'bg-white'
-                }`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6">
-                  <h2 className={`text-2xl font-bold mb-4 ${
-                    theme === 'dark' ? 'text-white' : 'text-gray-800'
-                  }`}>
-                    Payment
-                  </h2>
-
-                  <div className={`p-4 rounded-lg mb-4 ${
+                  <div className={`p-3 rounded-lg ${
                     theme === 'dark' ? 'bg-gray-700' : 'bg-gray-50'
                   }`}>
-                    <h4 className={`font-semibold mb-2 ${
-                      theme === 'dark' ? 'text-white' : 'text-gray-800'
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-sm ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      }`}>
+                        Date & Time:
+                      </span>
+                      <span className={`font-medium ${
+                        theme === 'dark' ? 'text-white' : 'text-gray-800'
+                      }`}>
+                        {new Date(selectedDate).toLocaleDateString()} at {selectedTime}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-sm ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      }`}>
+                        Duration:
+                      </span>
+                      <span className={`font-medium ${
+                        theme === 'dark' ? 'text-white' : 'text-gray-800'
+                      }`}>
+                        50 minutes
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-sm ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      }`}>
+                        Session Type:
+                      </span>
+                      <span className={`font-medium ${
+                        theme === 'dark' ? 'text-white' : 'text-gray-800'
+                      }`}>
+                        Video Call
+                      </span>
+                    </div>
+                    <hr className={`my-2 ${
+                      theme === 'dark' ? 'border-gray-600' : 'border-gray-200'
+                    }`} />
+                    <div className="flex items-center justify-between">
+                      <span className={`font-semibold ${
+                        theme === 'dark' ? 'text-white' : 'text-gray-800'
+                      }`}>
+                        Total:
+                      </span>
+                      <span className="text-xl font-bold text-green-600">
+                        ${selectedTherapist.hourlyRate}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Form */}
+              <div className={`p-4 rounded-xl shadow-lg ${
+                theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+              }`}>
+                <h3 className={`text-lg font-semibold mb-4 ${
+                  theme === 'dark' ? 'text-white' : 'text-gray-800'
+                }`}>
+                  Payment Information
+                </h3>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
                     }`}>
-                      Session with {selectedTherapist.name}
-                    </h4>
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-                          Date & Time:
-                        </span>
-                        <span className={theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}>
-                          {selectedDate} at {selectedTime ? new Date(`2000-01-01T${selectedTime}`).toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: true
-                          }) : 'Not selected'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between font-semibold pt-2 border-t border-gray-300 dark:border-gray-600">
-                        <span className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
-                          Amount:
-                        </span>
-                        <span className="text-green-600">
-                          ${selectedTherapist.hourlyRate} - paid
-                        </span>
-                      </div>
+                      Card Number
+                    </label>
+                    <div className="relative">
+                      <CreditCard className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                      }`} />
+                      <input
+                        type="text"
+                        value={paymentInfo.cardNumber}
+                        onChange={(e) => handlePaymentInputChange('cardNumber', formatCardNumber(e.target.value))}
+                        placeholder="1234 5678 9012 3456"
+                        maxLength={19}
+                        className={`w-full pl-10 pr-4 py-3 rounded-lg border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        } focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                      />
                     </div>
                   </div>
 
-                  <div className="flex space-x-3">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setShowPaymentModal(false)}
-                      className={`flex-1 py-3 rounded-xl font-medium transition-all duration-200 ${
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                      }`}>
+                        Expiry Date
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentInfo.expiryDate}
+                        onChange={(e) => handlePaymentInputChange('expiryDate', formatExpiryDate(e.target.value))}
+                        placeholder="MM/YY"
+                        maxLength={5}
+                        className={`w-full px-3 py-3 rounded-lg border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        } focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                      }`}>
+                        CVV
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentInfo.cvv}
+                        onChange={(e) => handlePaymentInputChange('cvv', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        placeholder="123"
+                        maxLength={4}
+                        className={`w-full px-3 py-3 rounded-lg border ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        } focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Cardholder Name
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentInfo.cardholderName}
+                      onChange={(e) => handlePaymentInputChange('cardholderName', e.target.value)}
+                      placeholder="John Doe"
+                      className={`w-full px-3 py-3 rounded-lg border ${
                         theme === 'dark'
-                          ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      Cancel
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handlePayment}
-                      className="flex-1 py-3 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-xl font-semibold hover:from-green-600 hover:to-teal-600 transition-all duration-300 flex items-center justify-center space-x-2"
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      <span>Pay ${selectedTherapist.hourlyRate}</span>
-                    </motion.button>
+                          ? 'bg-gray-700 border-gray-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      } focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      Billing Address
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentInfo.billingAddress}
+                      onChange={(e) => handlePaymentInputChange('billingAddress', e.target.value)}
+                      placeholder="123 Main St, City, State 12345"
+                      className={`w-full px-3 py-3 rounded-lg border ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 border-gray-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      } focus:outline-none focus:ring-2 focus:ring-purple-500`}
+                    />
+                  </div>
+
+                  {/* Security Notice */}
+                  <div className={`p-3 rounded-lg ${
+                    theme === 'dark' ? 'bg-green-900/20 border border-green-800' : 'bg-green-50 border border-green-200'
+                  }`}>
+                    <div className="flex items-center space-x-2">
+                      <Lock className="w-4 h-4 text-green-500" />
+                      <span className={`text-sm font-medium ${
+                        theme === 'dark' ? 'text-green-300' : 'text-green-700'
+                      }`}>
+                        Your payment information is secure and encrypted
+                      </span>
+                    </div>
+                  </div>
+
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={processPayment}
+                    disabled={isProcessingPayment}
+                    className="w-full py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isProcessingPayment ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                          className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
+                        />
+                        <span>Processing Payment...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-5 h-5" />
+                        <span>Pay ${selectedTherapist.hourlyRate} & Book Session</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {currentStep === 'confirmation' && bookingConfirmed && (
+            <motion.div
+              key="confirmation"
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 30 }}
+              className="max-w-2xl mx-auto"
+            >
+              <div className={`p-6 rounded-xl shadow-lg text-center ${
+                theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+              }`}>
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-500" />
+                </div>
+                
+                <h2 className={`text-2xl font-bold mb-4 ${
+                  theme === 'dark' ? 'text-white' : 'text-gray-800'
+                }`}>
+                  Booking Confirmed!
+                </h2>
+                
+                <p className={`text-lg mb-6 ${
+                  theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
+                }`}>
+                  Your therapy session has been successfully booked and paid for.
+                </p>
+
+                <div className={`p-4 rounded-lg mb-6 ${
+                  theme === 'dark' ? 'bg-gray-700' : 'bg-gray-50'
+                }`}>
+                  <h4 className={`font-semibold mb-3 ${
+                    theme === 'dark' ? 'text-white' : 'text-gray-800'
+                  }`}>
+                    Session Details:
+                  </h4>
+                  <div className="space-y-2 text-left">
+                    <div className="flex justify-between">
+                      <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                        Therapist:
+                      </span>
+                      <span className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
+                        {selectedTherapist?.name}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                        Date:
+                      </span>
+                      <span className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
+                        {new Date(selectedDate).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                        Time:
+                      </span>
+                      <span className={theme === 'dark' ? 'text-white' : 'text-gray-800'}>
+                        {selectedTime}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                        Amount Paid:
+                      </span>
+                      <span className="font-bold text-green-600">
+                        ${selectedTherapist?.hourlyRate}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </motion.div>
+
+                <div className={`p-3 rounded-lg mb-6 ${
+                  theme === 'dark' ? 'bg-blue-900/20 border border-blue-800' : 'bg-blue-50 border border-blue-200'
+                }`}>
+                  <p className={`text-sm ${
+                    theme === 'dark' ? 'text-blue-300' : 'text-blue-700'
+                  }`}>
+                    You will receive a confirmation email with the video call link. 
+                    The therapist will also be notified and will confirm the appointment.
+                  </p>
+                </div>
+
+                <div className="flex space-x-3">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={resetBooking}
+                    className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition-all duration-300"
+                  >
+                    Book Another Session
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => window.history.back()}
+                    className={`flex-1 py-3 rounded-xl font-semibold ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Back to Dashboard
+                  </motion.button>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
